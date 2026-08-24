@@ -21,16 +21,15 @@ typeset -g _faster_sg_region=''   # exact region_highlight entry we own
 
 # Fetch the best (newest) history line that STARTS with $1.
 # PURE ZSH C-LEVEL PATTERN MATCH: No shell loop, no subshell.
-# Uses ${history[(R)pat]} which executes in native C from newest to oldest.
+# Uses ${history[(R)pat]} which executes in native C.
 _faster_sg_fetch() {
   local buf="$1" pat
   _faster_sg_str=''
   [[ -z "$buf" ]] && return
 
   pat="${(b)buf}*"              # (b) escapes glob metachars — literal prefix match
-  local -a m
-  m=(${history[(R)${pat}]})
-  _faster_sg_str="${m[1]}"
+  _faster_sg_str="${history[(r)${pat}]}"  # (r) returns the single newest matching line directly
+  [[ -z "$_faster_sg_str" ]] && _faster_sg_str="${history[(R)${pat}]}"
 }
 
 # Repaint ghost text after redraw.
@@ -82,7 +81,8 @@ _faster_sg_accept() {
     BUFFER="$_faster_sg_str"
     CURSOR="${#BUFFER}"
     POSTDISPLAY=''
-    _faster_sg_last="$BUFFER"
+    # NOTE: _faster_sg_last is intentionally NOT set here so that
+    # _faster_sg_redraw catches the buffer change and cleans up region_highlight.
     _faster_sg_rehighlight
   else
     zle .forward-char
@@ -116,7 +116,8 @@ _faster_sg_accept_word() {
     BUFFER+="$grab"
     CURSOR="${#BUFFER}"
     POSTDISPLAY="${_faster_sg_str#"$BUFFER"}"
-    _faster_sg_last="$BUFFER"
+    # NOTE: _faster_sg_last is intentionally NOT set here so that
+    # _faster_sg_redraw catches the buffer change and updates region_highlight.
     _faster_sg_rehighlight
   fi
 }

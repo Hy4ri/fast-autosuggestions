@@ -21,15 +21,15 @@ typeset -g _faster_sg_region=''   # exact region_highlight entry we own
 
 # Fetch the best (newest) history line that STARTS with $1.
 # PURE ZSH C-LEVEL PATTERN MATCH: No shell loop, no subshell.
-# Uses ${history[(R)pat]} which executes in native C.
+# Uses ${history[(r)pat]} which executes in native C and returns the single
+# newest matching line without word-splitting or multi-match space concatenation.
 _faster_sg_fetch() {
   local buf="$1" pat
   _faster_sg_str=''
   [[ -z "$buf" ]] && return
 
   pat="${(b)buf}*"              # (b) escapes glob metachars — literal prefix match
-  _faster_sg_str="${history[(r)${pat}]}"  # (r) returns the single newest matching line directly
-  [[ -z "$_faster_sg_str" ]] && _faster_sg_str="${history[(R)${pat}]}"
+  _faster_sg_str="${history[(r)${pat}]}"
 }
 
 # Repaint ghost text after redraw.

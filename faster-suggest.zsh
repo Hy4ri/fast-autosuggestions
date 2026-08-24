@@ -22,44 +22,53 @@ typeset -g _faster_sg_last=''
 typeset -g _faster_sg_region=''   # exact region_highlight entry we own
 
 # Fetch the best (newest) history line that STARTS with $1.
-# PURE ZSH: no fork, no subshell. Walks event numbers downward from the
-# highest key in $history — O(SCAN) regardless of total HISTSIZE.
+# PURE ZSH: no fork, no subshell. Walks event numbers downward from HISTCMD-1.
 _faster_sg_fetch() {
-  local buf="$1" ev line count=0 top
+  local buf="$1" ev line top min
   _faster_sg_str=''
-  # empty buffer → nothing to suggest
   [[ -z "$buf" ]] && return
-  # highest event number = newest command. In interactive ZLE, HISTCMD points
-  # to the current line being edited, so the last SAVED entry is HISTCMD-1.
-  # Fallback to the highest $history key if HISTCMD is unset (defensive).
+
   top=$(( HISTCMD - 1 ))
-  (( top < 1 )) && { top="${${(knO)history}[1]}"; [[ -z "$top" ]] && return }
-  for (( ev = top; ev >= 1 && count < FASTER_SUGGEST_SCAN; ev-- )); do
+  (( top < 1 )) && { top="${${(knO)history}[1]}"; [[ -z "$top" ]] && return; }
+
+  min=$(( top - FASTER_SUGGEST_SCAN + 1 ))
+  (( min < 1 )) && min=1
+
+  for (( ev = top; ev >= min; ev-- )); do
     line="$history[$ev]"
     [[ -z "$line" ]] && continue
-    (( count++ ))
-    line="${line#${line%%[![:space:]]*}}"      # trim leading whitespace
-    # safe prefix match: literal string removal, no glob interpretation
-    [[ "${line#"$buf"}" != "$line" ]] && { _faster_sg_str="$line"; return }
+
+    # 1. Fast literal prefix check (safe against glob chars)
+    if [[ "${line#"$buf"}" != "$line" ]]; then
+      _faster_sg_str="$line"
+      return
+    fi
+
+    # 2. Fallback: check trimmed leading whitespace if raw line differed
+    local trimmed="${line#"${line%%[![:space:]]*}"}"
+    [[ "$trimmed" != "$line" && "${trimmed#"$buf"}" != "$trimmed" ]] && {
+      _faster_sg_str="$trimmed"
+      return
+    }
   done
 }
 
-# Repaint ghost text after every redraw where the buffer changed.
-# We NEVER clobber region_highlight as a whole — fast-syntax-highlighting (and
-# zsh-syntax-highlighting) paint the command line into that same shared array.
-# We only remove the one entry we own (tracked in _faster_sg_region) and append
-# our own, so fsh's colors survive untouched.
+# Repaint ghost text after every redraw.
 _faster_sg_redraw() {
   local buf="$BUFFER" rest len entry
-  # drop only our previous highlight entry, leave everything else intact
+
+  # Drop only our previous highlight entry via O(1) in-place array deletion
   if [[ -n "$_faster_sg_region" ]]; then
-    region_highlight=("${(@)region_highlight:#$_faster_sg_region}")
+    local idx="${region_highlight[(i)$_faster_sg_region]}"
+    (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
     _faster_sg_region=''
   fi
+
   if [[ "$buf" != "$_faster_sg_last" ]]; then
     _faster_sg_last="$buf"
     _faster_sg_fetch "$buf"
   fi
+
   if [[ -n "$_faster_sg_str" && "$_faster_sg_str" != "$buf" ]]; then
     rest="${_faster_sg_str#"$buf"}"
     POSTDISPLAY="$rest"
@@ -72,15 +81,12 @@ _faster_sg_redraw() {
   fi
 }
 
-# Trigger syntax highlighting update if fast-syntax-highlighting or
-# zsh-syntax-highlighting is present.
+# Trigger syntax highlighting update if present.
 _faster_sg_rehighlight() {
-  if (( $+functions[_zsh_highlight] )); then
-    _zsh_highlight
-  fi
+  (( $+functions[_zsh_highlight] )) && _zsh_highlight
 }
 
-# Accept the WHOLE suggestion at once (or move normally when no suggestion).
+# Accept the WHOLE suggestion at once.
 _faster_sg_accept() {
   if [[ -n "$POSTDISPLAY" ]]; then
     BUFFER="$_faster_sg_str"
@@ -95,44 +101,44 @@ _faster_sg_accept() {
 
 # Accept one WORD of the suggestion (Alt-Right behavior).
 _faster_sg_accept_word() {
-  if [[ -n "$POSTDISPLAY" ]]; then
-    local rest="$POSTDISPLAY" word
-    # grab the next word: leading whitespace + non-whitespace chunk
-    word="${rest%%[[:space:]]*}"
-    # if word == rest (no space found), check if rest starts with spaces
-    if [[ "$word" == "$rest" ]]; then
-      # single word left, accept all of it
-      BUFFER="$_faster_sg_str"
-      CURSOR="${#BUFFER}"
-      POSTDISPLAY=''
-    else
-      # include trailing whitespace after the word
-      local grab="${rest%%[![:space:]]*}"      # leading spaces (if any)
-      rest="${rest#"$grab"}"                   # strip leading spaces
-      local chunk="${rest%%[[:space:]]*}"       # the word itself
-      grab="${grab}${chunk}"
-      # also eat trailing space so cursor lands at next word start
-      rest="${rest#"$chunk"}"
-      local trail="${rest%%[![:space:]]*}"
-      grab="${grab}${trail}"
-      BUFFER="${BUFFER}${grab}"
-      CURSOR="${#BUFFER}"
-      POSTDISPLAY="${_faster_sg_str#"$BUFFER"}"
-    fi
+  if [[ -z "$POSTDISPLAY" ]]; then
+    zle .forward-word
+    return
+  fi
+
+  local rest="$POSTDISPLAY" grab=""
+
+  # 1. Grab leading whitespace
+  local ws="${rest%%[![:space:]]*}"
+  grab+="$ws"
+  rest="${rest#$ws}"
+
+  # 2. Grab the word itself
+  local w="${rest%%[[:space:]]*}"
+  grab+="$w"
+  rest="${rest#$w}"
+
+  # 3. Grab trailing whitespace so cursor lands at the next word cleanly
+  local tws="${rest%%[![:space:]]*}"
+  grab+="$tws"
+
+  if [[ -n "$grab" ]]; then
+    BUFFER+="$grab"
+    CURSOR="${#BUFFER}"
+    POSTDISPLAY="${_faster_sg_str#"$BUFFER"}"
     _faster_sg_last="$BUFFER"
     _faster_sg_rehighlight
-  else
-    zle .forward-word
   fi
 }
 
-# Clear ghost text on Enter so it doesn't flash on the new prompt.
+# Clear ghost text on Enter.
 _faster_sg_finish() {
   POSTDISPLAY=''
   _faster_sg_str=''
   _faster_sg_last=''
   if [[ -n "$_faster_sg_region" ]]; then
-    region_highlight=("${(@)region_highlight:#$_faster_sg_region}")
+    local idx="${region_highlight[(i)$_faster_sg_region]}"
+    (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
     _faster_sg_region=''
   fi
 }
@@ -147,16 +153,13 @@ zle -N _faster_sg_accept_word
 add-zle-hook-widget line-pre-redraw _faster_sg_redraw
 add-zle-hook-widget line-finish _faster_sg_finish
 
-# Right-arrow fills the WHOLE suggestion. Bind both normal-mode (^[[C)
-# and application-mode (^[OC) sequences so it works in any terminal.
+# Right-arrow fills the WHOLE suggestion (both CSI and SS3 / app-mode keypad)
 for _faster_sg_k in '^[[C' '^[OC'; do
   bindkey "$_faster_sg_k" _faster_sg_accept
 done
 bindkey "$FASTER_SUGGEST_KEY" _faster_sg_accept
 
-# Alt-Right accepts one WORD. Again both CSI and SS3 forms.
-# ^[[1;3C = CSI with Alt modifier, ^[^[[C = ESC then normal Right,
-# ^[f = classic readline Alt-f (forward-word with accept).
+# Alt-Right accepts one WORD
 for _faster_sg_k in '^[[1;3C' '^[^[[C' '^[^[OC' '^[f'; do
   bindkey "$_faster_sg_k" _faster_sg_accept_word
 done

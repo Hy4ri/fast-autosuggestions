@@ -8,8 +8,7 @@
 #   FASTER_SUGGEST_SCAN       how many recent events to scan (default: 5000)
 #   FASTER_SUGGEST_KEY        whole-suggestion accept key (default: ^E)
 #
-# Right-arrow accepts the suggestion one char at a time (like upstream).
-# The whole suggestion is accepted with $FASTER_SUGGEST_KEY (Ctrl-E).
+# Right-arrow (or $FASTER_SUGGEST_KEY / Ctrl-E) accepts the WHOLE suggestion.
 
 # --- config -------------------------------------------------------------
 typeset -g FASTER_SUGGEST_HIGHLIGHT="${FASTER_SUGGEST_HIGHLIGHT:-fg=8}"
@@ -22,14 +21,21 @@ typeset -g _faster_sg_last=''
 typeset -g _faster_sg_region=''   # exact region_highlight entry we own (so we never clobber others)
 
 # Fetch the best (newest) history line that STARTS with $1.
+# PURE ZSH: no fork to awk / no subshell — iterates the native $history
+# associative array, bounded to the last $FASTER_SUGGEST_SCAN events.
+# This removes the per-keystroke blocking fork that made the shell laggy.
 _faster_sg_fetch() {
-  local buf="$1" cand
-  # empty or contains a glob/blank → nothing useful to suggest
-  [[ -z "$buf" || "$buf" == *[\[\]\*\?]* ]] && { _faster_sg_str=''; return }
-  # newest-first, last N events, prefix match; trim leading spaces, take first hit
-  cand=$(fc -l -r -n -"$FASTER_SUGGEST_SCAN" 2>/dev/null \
-    | awk -v p="$buf" '{ sub(/^[ \t]+/, ""); if ($0 ~ "^" p) { print; exit } }')
-  _faster_sg_str="$cand"
+  local buf="$1" ev line keys
+  _faster_sg_str=''
+  # empty or contains a glob char → nothing useful to suggest
+  [[ -z "$buf" || "$buf" == *[\\[\\]\\*\\?]* ]] && return
+  keys=(${(Onk)history})                       # newest-first (descending event #)
+  (( ${#keys} > FASTER_SUGGEST_SCAN )) && keys=(${keys[1,FASTER_SUGGEST_SCAN]})
+  for ev in $keys; do                          # already newest-first
+    line="$history[$ev]"
+    line="${line#${line%%[![:space:]]*}}"      # trim leading whitespace
+    [[ "$line" == "$buf"* ]] && { _faster_sg_str="$line"; return }
+  done
 }
 
 # Repaint ghost text after every redraw where the buffer changed.
@@ -60,23 +66,15 @@ _faster_sg_redraw() {
   fi
 }
 
-# Right-arrow: accept one char of the suggestion (or move normally).
-_faster_sg_forward() {
-  if [[ -n "$POSTDISPLAY" ]]; then
-    BUFFER+="${POSTDISPLAY:0:1}"
-    CURSOR="${#BUFFER}"
-    _faster_sg_last="$BUFFER"
-    _faster_sg_fetch "$BUFFER"
-  else
-    zle .forward-char
-  fi
-}
-
-# Accept the whole suggestion at once.
+# Right-arrow / Ctrl-E: accept the WHOLE suggestion at once (or move normally
+# when there's no suggestion).
 _faster_sg_accept() {
   if [[ -n "$POSTDISPLAY" ]]; then
     BUFFER="$_faster_sg_str"
     CURSOR="${#BUFFER}"
+    _faster_sg_last="$BUFFER"
+  else
+    zle .forward-char
   fi
 }
 
@@ -86,14 +84,13 @@ _faster_sg_accept() {
 typeset -g _FASTER_SUGGEST_LOADED=1
 
 autoload -Uz add-zle-hook-widget
-zle -N _faster_sg_forward
 zle -N _faster_sg_accept
 add-zle-hook-widget line-pre-redraw _faster_sg_redraw
-# Right-arrow accepts one char at a time. zsh puts the keypad in *application
+# Right-arrow fills the WHOLE suggestion. zsh puts the keypad in *application
 # mode* on startup, so most terminals emit ESC O C (^[OC) for the arrow, not the
 # normal-mode ESC [ C (^[[C). Bind BOTH so the arrow works regardless of mode.
 for _faster_sg_k in '^[[C' '^[OC'; do
-  bindkey "$_faster_sg_k" _faster_sg_forward
+  bindkey "$_faster_sg_k" _faster_sg_accept
 done
 bindkey "$FASTER_SUGGEST_KEY" _faster_sg_accept
 unset _faster_sg_k

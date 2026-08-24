@@ -89,5 +89,11 @@ autoload -Uz add-zle-hook-widget
 zle -N _faster_sg_forward
 zle -N _faster_sg_accept
 add-zle-hook-widget line-pre-redraw _faster_sg_redraw
-bindkey '^[[C' _faster_sg_forward
+# Right-arrow accepts one char at a time. zsh puts the keypad in *application
+# mode* on startup, so most terminals emit ESC O C (^[OC) for the arrow, not the
+# normal-mode ESC [ C (^[[C). Bind BOTH so the arrow works regardless of mode.
+for _faster_sg_k in '^[[C' '^[OC'; do
+  bindkey "$_faster_sg_k" _faster_sg_forward
+done
 bindkey "$FASTER_SUGGEST_KEY" _faster_sg_accept
+unset _faster_sg_k

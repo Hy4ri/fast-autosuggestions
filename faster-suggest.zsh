@@ -19,6 +19,7 @@ typeset -g FASTER_SUGGEST_KEY="${FASTER_SUGGEST_KEY:-^E}"
 # --- internal state -----------------------------------------------------
 typeset -g _faster_sg_str=''
 typeset -g _faster_sg_last=''
+typeset -g _faster_sg_region=''   # exact region_highlight entry we own (so we never clobber others)
 
 # Fetch the best (newest) history line that STARTS with $1.
 _faster_sg_fetch() {
@@ -32,8 +33,17 @@ _faster_sg_fetch() {
 }
 
 # Repaint ghost text after every redraw where the buffer changed.
+# We NEVER clobber region_highlight as a whole — fast-syntax-highlighting (and
+# zsh-syntax-highlighting) paint the command line into that same shared array.
+# We only remove the one entry we own (tracked in _faster_sg_region) and append
+# our own, so fsh's colors survive untouched.
 _faster_sg_redraw() {
-  local buf="$BUFFER" rest len
+  local buf="$BUFFER" rest len entry
+  # drop only our previous highlight entry, leave everything else intact
+  if [[ -n "$_faster_sg_region" ]]; then
+    region_highlight=("${(@)region_highlight:#$_faster_sg_region}")
+    _faster_sg_region=''
+  fi
   if [[ "$buf" != "$_faster_sg_last" ]]; then
     _faster_sg_last="$buf"
     _faster_sg_fetch "$buf"
@@ -42,10 +52,11 @@ _faster_sg_redraw() {
     rest="${_faster_sg_str#$buf}"
     POSTDISPLAY="$rest"
     len="${#BUFFER}"
-    region_highlight=("$len $((len + ${#rest})) $FASTER_SUGGEST_HIGHLIGHT")
+    entry="$len $((len + ${#rest})) $FASTER_SUGGEST_HIGHLIGHT"
+    region_highlight+=("$entry")
+    _faster_sg_region="$entry"
   else
     POSTDISPLAY=''
-    region_highlight=()
   fi
 }
 

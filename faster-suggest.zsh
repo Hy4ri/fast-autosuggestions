@@ -72,6 +72,14 @@ _faster_sg_redraw() {
   fi
 }
 
+# Trigger syntax highlighting update if fast-syntax-highlighting or
+# zsh-syntax-highlighting is present.
+_faster_sg_rehighlight() {
+  if (( $+functions[_zsh_highlight] )); then
+    _zsh_highlight
+  fi
+}
+
 # Accept the WHOLE suggestion at once (or move normally when no suggestion).
 _faster_sg_accept() {
   if [[ -n "$POSTDISPLAY" ]]; then
@@ -79,6 +87,7 @@ _faster_sg_accept() {
     CURSOR="${#BUFFER}"
     POSTDISPLAY=''
     _faster_sg_last="$BUFFER"
+    _faster_sg_rehighlight
   else
     zle .forward-char
   fi
@@ -111,6 +120,7 @@ _faster_sg_accept_word() {
       POSTDISPLAY="${_faster_sg_str#"$BUFFER"}"
     fi
     _faster_sg_last="$BUFFER"
+    _faster_sg_rehighlight
   else
     zle .forward-word
   fi

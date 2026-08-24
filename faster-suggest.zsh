@@ -1,11 +1,10 @@
 # faster-suggest.zsh
 # Lean history autosuggest for zsh — a lighter, faster replacement for
 # zsh-users/zsh-autosuggestions. No fpath pollution, no widget wrapping,
-# bounded recency scan. Source it from your .zshrc.
+# C-level pattern scanning. Source it from your .zshrc.
 #
 # Config (override before sourcing):
 #   FASTER_SUGGEST_HIGHLIGHT  ghost-text color style   (default: fg=8)
-#   FASTER_SUGGEST_SCAN       how many recent events to scan (default: 5000)
 #   FASTER_SUGGEST_KEY        whole-suggestion accept key (default: ^E)
 #
 # Right-arrow (or $FASTER_SUGGEST_KEY / Ctrl-E) accepts the WHOLE suggestion.
@@ -13,7 +12,6 @@
 
 # --- config -------------------------------------------------------------
 typeset -g FASTER_SUGGEST_HIGHLIGHT="${FASTER_SUGGEST_HIGHLIGHT:-fg=8}"
-typeset -g FASTER_SUGGEST_SCAN="${FASTER_SUGGEST_SCAN:-5000}"
 typeset -g FASTER_SUGGEST_KEY="${FASTER_SUGGEST_KEY:-^E}"
 
 # --- internal state -----------------------------------------------------
@@ -22,58 +20,50 @@ typeset -g _faster_sg_last=''
 typeset -g _faster_sg_region=''   # exact region_highlight entry we own
 
 # Fetch the best (newest) history line that STARTS with $1.
-# PURE ZSH: no fork, no subshell. Walks event numbers downward from HISTCMD-1.
+# PURE ZSH C-LEVEL PATTERN MATCH: No shell loop, no subshell.
+# Uses ${history[(R)pat]} which executes in native C from newest to oldest.
 _faster_sg_fetch() {
-  local buf="$1" ev line top min
+  local buf="$1" pat
   _faster_sg_str=''
   [[ -z "$buf" ]] && return
 
-  top=$(( HISTCMD - 1 ))
-  (( top < 1 )) && { top="${${(knO)history}[1]}"; [[ -z "$top" ]] && return; }
-
-  min=$(( top - FASTER_SUGGEST_SCAN + 1 ))
-  (( min < 1 )) && min=1
-
-  for (( ev = top; ev >= min; ev-- )); do
-    line="$history[$ev]"
-    [[ -z "$line" ]] && continue
-
-    # 1. Fast literal prefix check (safe against glob chars)
-    if [[ "${line#"$buf"}" != "$line" ]]; then
-      _faster_sg_str="$line"
-      return
-    fi
-
-    # 2. Fallback: check trimmed leading whitespace if raw line differed
-    local trimmed="${line#"${line%%[![:space:]]*}"}"
-    [[ "$trimmed" != "$line" && "${trimmed#"$buf"}" != "$trimmed" ]] && {
-      _faster_sg_str="$trimmed"
-      return
-    }
-  done
+  pat="${(b)buf}*"              # (b) escapes glob metachars — literal prefix match
+  local -a m
+  m=(${history[(R)${pat}]})
+  _faster_sg_str="${m[1]}"
 }
 
-# Repaint ghost text after every redraw.
+# Repaint ghost text after redraw.
 _faster_sg_redraw() {
-  local buf="$BUFFER" rest len entry
+  local buf="$BUFFER"
 
-  # Drop only our previous highlight entry via O(1) in-place array deletion
+  # 1. Pure cursor move / unrelated redraw — buffer text unchanged, nothing to do
+  if [[ "$buf" == "$_faster_sg_last" ]]; then
+    return
+  fi
+
+  # 2. Forward-typing memoization: if new text simply extends previous buffer
+  # and the existing suggestion already matches, keep it without rescanning!
+  if [[ "$buf" == "${_faster_sg_last}"* && -n "$_faster_sg_str" && "$_faster_sg_str" == "$buf"* ]]; then
+    :
+  else
+    _faster_sg_fetch "$buf"
+  fi
+  _faster_sg_last="$buf"
+
+  # 3. Drop previous highlight entry via O(1) in-place array deletion
   if [[ -n "$_faster_sg_region" ]]; then
     local idx="${region_highlight[(i)$_faster_sg_region]}"
     (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
     _faster_sg_region=''
   fi
 
-  if [[ "$buf" != "$_faster_sg_last" ]]; then
-    _faster_sg_last="$buf"
-    _faster_sg_fetch "$buf"
-  fi
-
+  # 4. Apply new suggestion highlight if available
   if [[ -n "$_faster_sg_str" && "$_faster_sg_str" != "$buf" ]]; then
-    rest="${_faster_sg_str#"$buf"}"
+    local rest="${_faster_sg_str#"$buf"}"
     POSTDISPLAY="$rest"
-    len="${#BUFFER}"
-    entry="$len $((len + ${#rest})) $FASTER_SUGGEST_HIGHLIGHT"
+    local len="${#buf}"
+    local entry="$len $((len + ${#rest})) $FASTER_SUGGEST_HIGHLIGHT"
     region_highlight+=("$entry")
     _faster_sg_region="$entry"
   else
@@ -118,7 +108,7 @@ _faster_sg_accept_word() {
   grab+="$w"
   rest="${rest#$w}"
 
-  # 3. Grab trailing whitespace so cursor lands at the next word cleanly
+  # 3. Grab trailing whitespace so cursor lands cleanly at next word start
   local tws="${rest%%[![:space:]]*}"
   grab+="$tws"
 

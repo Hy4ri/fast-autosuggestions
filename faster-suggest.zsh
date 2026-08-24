@@ -51,9 +51,9 @@ _faster_sg_redraw() {
   fi
   _faster_sg_last="$buf"
 
-  # 3. Drop previous highlight entry via O(1) in-place array deletion
+  # 3. Drop previous highlight entry via exact match lookup (ie)
   if [[ -n "$_faster_sg_region" ]]; then
-    local idx="${region_highlight[(i)$_faster_sg_region]}"
+    local idx="${region_highlight[(ie)$_faster_sg_region]}"
     (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
     _faster_sg_region=''
   fi
@@ -127,7 +127,7 @@ _faster_sg_finish() {
   _faster_sg_str=''
   _faster_sg_last=''
   if [[ -n "$_faster_sg_region" ]]; then
-    local idx="${region_highlight[(i)$_faster_sg_region]}"
+    local idx="${region_highlight[(ie)$_faster_sg_region]}"
     (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
     _faster_sg_region=''
   fi

@@ -144,9 +144,20 @@ zle -N _faster_sg_accept_word
 add-zle-hook-widget line-pre-redraw _faster_sg_redraw
 add-zle-hook-widget line-finish _faster_sg_finish
 
-# Right-arrow fills the WHOLE suggestion (both CSI and SS3 / app-mode keypad)
+# Right-arrow: Smart Accept (only accept suggestion if cursor is at EOL,
+# otherwise move cursor forward normally).
+_faster_sg_smart_right() {
+  if [[ -n "$POSTDISPLAY" && $CURSOR -eq ${#BUFFER} ]]; then
+    _faster_sg_accept
+  else
+    zle .forward-char
+  fi
+}
+zle -N _faster_sg_smart_right
+
+# Bind Right-arrow to smart-right
 for _faster_sg_k in '^[[C' '^[OC'; do
-  bindkey "$_faster_sg_k" _faster_sg_accept
+  bindkey "$_faster_sg_k" _faster_sg_smart_right
 done
 bindkey "$FASTER_SUGGEST_KEY" _faster_sg_accept
 

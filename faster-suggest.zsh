@@ -69,7 +69,11 @@ _faster_sg_accept() {
   fi
 }
 
-# --- wire up ------------------------------------------------------------
+# --- wire up (idempotent: safe if sourced more than once) --------------
+# Guard so a double-source (e.g. plugin-load loop + explicit source) is a no-op.
+(( ${+_FASTER_SUGGEST_LOADED} )) && return
+typeset -g _FASTER_SUGGEST_LOADED=1
+
 autoload -Uz add-zle-hook-widget
 zle -N _faster_sg_forward
 zle -N _faster_sg_accept

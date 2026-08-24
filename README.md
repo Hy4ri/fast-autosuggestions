@@ -1,4 +1,4 @@
-# faster-suggest
+# fast-autosuggestions
 
 A blazing fast, zero-overhead history autosuggest for **zsh** — a modern, lighter replacement for `zsh-users/zsh-autosuggestions`.
 
@@ -13,7 +13,7 @@ A blazing fast, zero-overhead history autosuggest for **zsh** — a modern, ligh
 | Key | Action |
 | --- | --- |
 | `→` (Right Arrow) | **Smart Accept:** Accepts full suggestion at EOL; moves cursor normally inside text |
-| `Ctrl-E` (or `$FASTER_SUGGEST_KEY`) | Accepts the **whole** suggestion anywhere |
+| `Ctrl-E` (or `$FAST_AUTOSUGGEST_KEY`) | Accepts the **whole** suggestion anywhere |
 | `Alt+→` / `Alt-f` | Accepts **one word** at a time |
 
 *(Works out of the box with both standard CSI and application-mode keypad sequences).*
@@ -23,13 +23,13 @@ A blazing fast, zero-overhead history autosuggest for **zsh** — a modern, ligh
 Clone into your Zsh plugins directory:
 
 ```sh
-git clone https://github.com/Hy4ri/faster-suggest ~/.zsh/plugins/faster-suggest
+git clone https://github.com/Hy4ri/fast-autosuggestions ~/.zsh/plugins/fast-autosuggestions
 ```
 
 Source it from your `.zshrc` (load it *after* syntax highlighting):
 
 ```sh
-source ~/.zsh/plugins/faster-suggest/faster-suggest.zsh
+source ~/.zsh/plugins/fast-autosuggestions/fast-autosuggestions.zsh
 ```
 
 ## Configuration
@@ -38,8 +38,8 @@ Set any of these variables before sourcing the script:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `FASTER_SUGGEST_HIGHLIGHT` | `fg=8` | Ghost text highlight style (e.g. `fg=8`, `fg=244`, `bold`) |
-| `FASTER_SUGGEST_KEY` | `^E` | Keybinding to accept the whole suggestion |
+| `FAST_AUTOSUGGEST_HIGHLIGHT` | `fg=8` | Ghost text highlight style (e.g. `fg=8`, `fg=244`, `bold`) |
+| `FAST_AUTOSUGGEST_KEY` | `^E` | Keybinding to accept the whole suggestion |
 
 ## License
 

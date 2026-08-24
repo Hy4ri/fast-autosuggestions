@@ -1,96 +1,96 @@
-# faster-suggest.zsh
+# fast-autosuggestions.zsh
 # Lean history autosuggest for zsh — a lighter, faster replacement for
 # zsh-users/zsh-autosuggestions. No fpath pollution, no widget wrapping,
 # C-level pattern scanning. Source it from your .zshrc.
 #
 # Config (override before sourcing):
-#   FASTER_SUGGEST_HIGHLIGHT  ghost-text color style   (default: fg=8)
-#   FASTER_SUGGEST_KEY        whole-suggestion accept key (default: ^E)
+#   FAST_AUTOSUGGEST_HIGHLIGHT  ghost-text color style   (default: fg=8)
+#   FAST_AUTOSUGGEST_KEY        whole-suggestion accept key (default: ^E)
 #
-# Right-arrow (or $FASTER_SUGGEST_KEY / Ctrl-E) accepts the WHOLE suggestion.
+# Right-arrow (or $FAST_AUTOSUGGEST_KEY / Ctrl-E) accepts the WHOLE suggestion.
 # Alt-right accepts one WORD at a time.
 
 # --- config -------------------------------------------------------------
-typeset -g FASTER_SUGGEST_HIGHLIGHT="${FASTER_SUGGEST_HIGHLIGHT:-fg=8}"
-typeset -g FASTER_SUGGEST_KEY="${FASTER_SUGGEST_KEY:-^E}"
+typeset -g FAST_AUTOSUGGEST_HIGHLIGHT="${FAST_AUTOSUGGEST_HIGHLIGHT:-fg=8}"
+typeset -g FAST_AUTOSUGGEST_KEY="${FAST_AUTOSUGGEST_KEY:-^E}"
 
 # --- internal state -----------------------------------------------------
-typeset -g _faster_sg_str=''
-typeset -g _faster_sg_last=''
-typeset -g _faster_sg_region=''   # exact region_highlight entry we own
+typeset -g _fast_as_str=''
+typeset -g _fast_as_last=''
+typeset -g _fast_as_region=''   # exact region_highlight entry we own
 
 # Fetch the best (newest) history line that STARTS with $1.
 # PURE ZSH C-LEVEL PATTERN MATCH: No shell loop, no subshell.
 # Uses ${history[(r)pat]} which executes in native C and returns the single
 # newest matching line without word-splitting or multi-match space concatenation.
-_faster_sg_fetch() {
+_fast_as_fetch() {
   local buf="$1" pat
-  _faster_sg_str=''
+  _fast_as_str=''
   [[ -z "$buf" ]] && return
 
   pat="${(b)buf}*"              # (b) escapes glob metachars — literal prefix match
-  _faster_sg_str="${history[(r)${pat}]}"
+  _fast_as_str="${history[(r)${pat}]}"
 }
 
 # Repaint ghost text after redraw.
-_faster_sg_redraw() {
+_fast_as_redraw() {
   local buf="$BUFFER"
 
   # 1. Pure cursor move / unrelated redraw — buffer text unchanged, nothing to do
-  if [[ "$buf" == "$_faster_sg_last" ]]; then
+  if [[ "$buf" == "$_fast_as_last" ]]; then
     return
   fi
 
   # 2. Forward-typing memoization: if new text simply extends previous buffer
   # and the existing suggestion already matches, keep it without rescanning!
-  if [[ "$buf" == "${_faster_sg_last}"* && -n "$_faster_sg_str" && "$_faster_sg_str" == "$buf"* ]]; then
+  if [[ "$buf" == "${_fast_as_last}"* && -n "$_fast_as_str" && "$_fast_as_str" == "$buf"* ]]; then
     :
   else
-    _faster_sg_fetch "$buf"
+    _fast_as_fetch "$buf"
   fi
-  _faster_sg_last="$buf"
+  _fast_as_last="$buf"
 
   # 3. Drop previous highlight entry via exact match lookup (ie)
-  if [[ -n "$_faster_sg_region" ]]; then
-    local idx="${region_highlight[(ie)$_faster_sg_region]}"
+  if [[ -n "$_fast_as_region" ]]; then
+    local idx="${region_highlight[(ie)$_fast_as_region]}"
     (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
-    _faster_sg_region=''
+    _fast_as_region=''
   fi
 
   # 4. Apply new suggestion highlight if available
-  if [[ -n "$_faster_sg_str" && "$_faster_sg_str" != "$buf" ]]; then
-    local rest="${_faster_sg_str#"$buf"}"
+  if [[ -n "$_fast_as_str" && "$_fast_as_str" != "$buf" ]]; then
+    local rest="${_fast_as_str#"$buf"}"
     POSTDISPLAY="$rest"
     local len="${#buf}"
-    local entry="$len $((len + ${#rest})) $FASTER_SUGGEST_HIGHLIGHT"
+    local entry="$len $((len + ${#rest})) $FAST_AUTOSUGGEST_HIGHLIGHT"
     region_highlight+=("$entry")
-    _faster_sg_region="$entry"
+    _fast_as_region="$entry"
   else
     POSTDISPLAY=''
   fi
 }
 
 # Trigger syntax highlighting update if present.
-_faster_sg_rehighlight() {
+_fast_as_rehighlight() {
   (( $+functions[_zsh_highlight] )) && _zsh_highlight
 }
 
 # Accept the WHOLE suggestion at once.
-_faster_sg_accept() {
+_fast_as_accept() {
   if [[ -n "$POSTDISPLAY" ]]; then
-    BUFFER="$_faster_sg_str"
+    BUFFER="$_fast_as_str"
     CURSOR="${#BUFFER}"
     POSTDISPLAY=''
-    # NOTE: _faster_sg_last is intentionally NOT set here so that
-    # _faster_sg_redraw catches the buffer change and cleans up region_highlight.
-    _faster_sg_rehighlight
+    # NOTE: _fast_as_last is intentionally NOT set here so that
+    # _fast_as_redraw catches the buffer change and cleans up region_highlight.
+    _fast_as_rehighlight
   else
     zle .forward-char
   fi
 }
 
 # Accept one WORD of the suggestion (Alt-Right behavior).
-_faster_sg_accept_word() {
+_fast_as_accept_word() {
   if [[ -z "$POSTDISPLAY" ]]; then
     zle .forward-word
     return
@@ -115,54 +115,54 @@ _faster_sg_accept_word() {
   if [[ -n "$grab" ]]; then
     BUFFER+="$grab"
     CURSOR="${#BUFFER}"
-    POSTDISPLAY="${_faster_sg_str#"$BUFFER"}"
-    # NOTE: _faster_sg_last is intentionally NOT set here so that
-    # _faster_sg_redraw catches the buffer change and updates region_highlight.
-    _faster_sg_rehighlight
+    POSTDISPLAY="${_fast_as_str#"$BUFFER"}"
+    # NOTE: _fast_as_last is intentionally NOT set here so that
+    # _fast_as_redraw catches the buffer change and updates region_highlight.
+    _fast_as_rehighlight
   fi
 }
 
 # Clear ghost text on Enter.
-_faster_sg_finish() {
+_fast_as_finish() {
   POSTDISPLAY=''
-  _faster_sg_str=''
-  _faster_sg_last=''
-  if [[ -n "$_faster_sg_region" ]]; then
-    local idx="${region_highlight[(ie)$_faster_sg_region]}"
+  _fast_as_str=''
+  _fast_as_last=''
+  if [[ -n "$_fast_as_region" ]]; then
+    local idx="${region_highlight[(ie)$_fast_as_region]}"
     (( idx <= ${#region_highlight} )) && region_highlight[idx]=()
-    _faster_sg_region=''
+    _fast_as_region=''
   fi
 }
 
 # --- wire up (idempotent: safe if sourced more than once) --------------
-(( ${+_FASTER_SUGGEST_LOADED} )) && return
-typeset -g _FASTER_SUGGEST_LOADED=1
+(( ${+_FAST_AUTOSUGGEST_LOADED} )) && return
+typeset -g _FAST_AUTOSUGGEST_LOADED=1
 
 autoload -Uz add-zle-hook-widget
-zle -N _faster_sg_accept
-zle -N _faster_sg_accept_word
-add-zle-hook-widget line-pre-redraw _faster_sg_redraw
-add-zle-hook-widget line-finish _faster_sg_finish
+zle -N _fast_as_accept
+zle -N _fast_as_accept_word
+add-zle-hook-widget line-pre-redraw _fast_as_redraw
+add-zle-hook-widget line-finish _fast_as_finish
 
 # Right-arrow: Smart Accept (only accept suggestion if cursor is at EOL,
 # otherwise move cursor forward normally).
-_faster_sg_smart_right() {
+_fast_as_smart_right() {
   if [[ -n "$POSTDISPLAY" && $CURSOR -eq ${#BUFFER} ]]; then
-    _faster_sg_accept
+    _fast_as_accept
   else
     zle .forward-char
   fi
 }
-zle -N _faster_sg_smart_right
+zle -N _fast_as_smart_right
 
 # Bind Right-arrow to smart-right
-for _faster_sg_k in '^[[C' '^[OC'; do
-  bindkey "$_faster_sg_k" _faster_sg_smart_right
+for _fast_as_k in '^[[C' '^[OC'; do
+  bindkey "$_fast_as_k" _fast_as_smart_right
 done
-bindkey "$FASTER_SUGGEST_KEY" _faster_sg_accept
+bindkey "$FAST_AUTOSUGGEST_KEY" _fast_as_accept
 
 # Alt-Right accepts one WORD
-for _faster_sg_k in '^[[1;3C' '^[^[[C' '^[^[OC' '^[f'; do
-  bindkey "$_faster_sg_k" _faster_sg_accept_word
+for _fast_as_k in '^[[1;3C' '^[^[[C' '^[^[OC' '^[f'; do
+  bindkey "$_fast_as_k" _fast_as_accept_word
 done
-unset _faster_sg_k
+unset _fast_as_k

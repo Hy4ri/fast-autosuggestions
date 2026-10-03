@@ -37,7 +37,13 @@ _fast_as_redraw() {
   local buf="$BUFFER"
 
   # 1. Pure cursor move / unrelated redraw — buffer text unchanged, nothing to do
+  # ...unless something (fzf-tab, syntax highlighters) rebuilt region_highlight
+  # and dropped our ghost-text entry: then just restore it.
   if [[ "$buf" == "$_fast_as_last" ]]; then
+    if [[ -n "$_fast_as_region" && -n "$POSTDISPLAY" ]] \
+       && (( ${region_highlight[(ie)$_fast_as_region]} > ${#region_highlight} )); then
+      region_highlight+=("$_fast_as_region")
+    fi
     return
   fi
 
